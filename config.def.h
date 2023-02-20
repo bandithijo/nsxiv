@@ -1,4 +1,4 @@
-#ifdef _WINDOW_CONFIG
+#ifdef INCLUDE_WINDOW_CONFIG
 
 /* default window dimensions (overwritten via -g option): */
 static const int WIN_WIDTH  = 800;
@@ -20,7 +20,7 @@ static const bool TOP_STATUSBAR = false;
 #endif /* HAVE_LIBFONTS */
 
 #endif
-#ifdef _IMAGE_CONFIG
+#ifdef INCLUDE_IMAGE_CONFIG
 
 /* levels (in percent) to use when zooming via '-' and '+':
  * (first/last value is used as min/max zoom level)
@@ -33,36 +33,45 @@ static const float zoom_levels[] = {
 /* default slideshow delay (in sec, overwritten via -S option): */
 static const int SLIDESHOW_DELAY = 5;
 
-/* gamma correction: the user-visible ranges [-GAMMA_RANGE, 0] and
- * (0, GAMMA_RANGE] are mapped to the ranges [0, 1], and (1, GAMMA_MAX].
+/* color correction: the user-visible ranges [-CC_STEPS, 0] and
+ * (0, CC_STEPS] are mapped to the ranges [0, 1], and (1, *_MAX].
+ * Higher step count will have higher granulairy.
  */
-static const double GAMMA_MAX   = 10.0;
-static const int    GAMMA_RANGE = 32;
+static const int    CC_STEPS        = 32;
+static const double GAMMA_MAX       = 10.0;
+static const double BRIGHTNESS_MAX  = 2.0;
+static const double CONTRAST_MAX    = 4.0;
 
 /* command i_scroll pans image 1/PAN_FRACTION of screen width/height */
 static const int PAN_FRACTION = 5;
-
-/* if false, pixelate images at zoom level != 100%,
- * toggled with 'a' key binding
- */
-static const bool ANTI_ALIAS = true;
-
-/* if true, use a checkerboard background for alpha layer,
- * toggled with 'A' key binding
- */
-static const bool ALPHA_LAYER = false;
 
 /* percentage of memory to use for imlib2's cache size.
  *   3 means use 3% of total memory which is about 245MiB on 8GiB machine.
  *   0 or less means disable cache.
  * 100 means use all available memory (but not above CACHE_SIZE_LIMIT).
+ *
+ * NOTE: higher cache size means better image reloading performance, but also
+ * higher memory usage.
  */
 static const int CACHE_SIZE_MEM_PERCENTAGE = 3;          /* use 3% of total memory for cache */
 static const int CACHE_SIZE_LIMIT = 256 * 1024 * 1024;   /* but not above 256MiB */
 static const int CACHE_SIZE_FALLBACK = 32 * 1024 * 1024; /* fallback to 32MiB if we can't determine total memory */
 
 #endif
-#ifdef _THUMBS_CONFIG
+#ifdef INCLUDE_OPTIONS_CONFIG
+
+/* if false, pixelate images at zoom level != 100%,
+ * toggled with 'a' key binding (overwritten via `--anti-alias` option)
+ */
+static const bool ANTI_ALIAS = true;
+
+/* if true, use a checkerboard background for alpha layer,
+ * toggled with 'A' key binding (overwritten via `--alpha-layer` option)
+ */
+static const bool ALPHA_LAYER = false;
+
+#endif
+#ifdef INCLUDE_THUMBS_CONFIG
 
 /* thumbnail sizes in pixels (width == height): */
 static const int thumb_sizes[] = { 32, 64, 96, 128, 160, 360 };
@@ -71,7 +80,7 @@ static const int thumb_sizes[] = { 32, 64, 96, 128, 160, 360 };
 static const int THUMB_SIZE = 5;
 
 #endif
-#ifdef _MAPPINGS_CONFIG
+#ifdef INCLUDE_MAPPINGS_CONFIG
 
 /* these modifiers will be used when processing keybindings */
 static const unsigned int USED_MODMASK = ShiftMask | ControlMask | Mod1Mask;
@@ -112,6 +121,10 @@ static const keymap_t keys[] = {
 	{ 0,            XK_braceleft,     g_change_gamma,       -1 },
 	{ 0,            XK_braceright,    g_change_gamma,       +1 },
 	{ ControlMask,  XK_g,             g_change_gamma,        0 },
+	{ ControlMask,  XK_bracketright,  g_change_brightness,  +1 },
+	{ ControlMask,  XK_bracketleft,   g_change_brightness,  -1 },
+	{ 0,            XK_parenleft,     g_change_contrast,    -1 },
+	{ 0,            XK_parenright,    g_change_contrast,    +1 },
 
 	{ 0,            XK_h,             t_move_sel,           DIR_LEFT },
 	{ 0,            XK_Left,          t_move_sel,           DIR_LEFT },

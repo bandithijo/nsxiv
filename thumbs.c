@@ -1,5 +1,5 @@
 /* Copyright 2011-2020 Bert Muennich
- * Copyright 2021-2022 nsxiv contributors
+ * Copyright 2021-2023 nsxiv contributors
  *
  * This file is a part of nsxiv.
  *
@@ -18,22 +18,21 @@
  */
 
 #include "nsxiv.h"
-#define _THUMBS_CONFIG
+#define INCLUDE_THUMBS_CONFIG
 #include "config.h"
 
+#include <assert.h>
 #include <errno.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/types.h>
 #include <sys/stat.h>
 #include <unistd.h>
 #include <utime.h>
 
 #if HAVE_LIBEXIF
 #include <libexif/exif-data.h>
-void exif_auto_orientate(const fileinfo_t*);
 #endif
-Imlib_Image img_open(const fileinfo_t*);
 
 static char *cache_dir;
 
@@ -42,8 +41,7 @@ static char* tns_cache_filepath(const char *filepath)
 	size_t len;
 	char *cfile = NULL;
 
-	if (*filepath != '/')
-		return NULL;
+	assert(*filepath == '/' && "filepath should be result of realpath(3)");
 
 	if (strncmp(filepath, cache_dir, strlen(cache_dir)) != 0) {
 		/* don't cache images inside the cache directory! */
@@ -94,10 +92,8 @@ static void tns_cache_write(Imlib_Image im, const char *filepath, bool force)
 		{
 			if ((dirend = strrchr(cfile, '/')) != NULL) {
 				*dirend = '\0';
-				if (r_mkdir(cfile) == -1) {
-					error(0, errno, "%s", cfile);
+				if (r_mkdir(cfile) < 0)
 					goto end;
-				}
 				*dirend = '/';
 			}
 			imlib_context_set_image(im);
@@ -143,16 +139,16 @@ void tns_clean_cache(void)
 	r_closedir(&dir);
 }
 
-void tns_init(tns_t *tns, fileinfo_t *files, const int *cnt, int *sel, win_t *win)
+void tns_init(tns_t *tns, fileinfo_t *tns_files, const int *cnt, int *sel, win_t *win)
 {
 	int len;
 	const char *homedir, *dsuffix = "";
 
 	if (cnt != NULL && *cnt > 0)
-		tns->thumbs = ecalloc(*cnt, sizeof(thumb_t));
+		tns->thumbs = ecalloc(*cnt, sizeof(*tns->thumbs));
 	else
 		tns->thumbs = NULL;
-	tns->files = files;
+	tns->files = tns_files;
 	tns->cnt = cnt;
 	tns->initnext = tns->loadnext = 0;
 	tns->first = tns->end = tns->r_first = tns->r_end = 0;
@@ -359,9 +355,7 @@ void tns_unload(tns_t *tns, int n)
 {
 	thumb_t *t;
 
-	if (n < 0 || n >= *tns->cnt)
-		return;
-
+	assert(n >= 0 && n < *tns->cnt);
 	t = &tns->thumbs[n];
 
 	if (t->im != NULL) {
@@ -375,9 +369,7 @@ static void tns_check_view(tns_t *tns, bool scrolled)
 {
 	int r;
 
-	if (tns == NULL)
-		return;
-
+	assert(tns != NULL);
 	tns->first -= tns->first % tns->cols;
 	r = *tns->sel % tns->cols;
 
@@ -461,6 +453,7 @@ void tns_render(tns_t *tns)
 	}
 	tns->dirty = false;
 	tns_highlight(tns, *tns->sel, true);
+	title_dirty = true;
 }
 
 void tns_mark(tns_t *tns, int n, bool mark)
@@ -508,20 +501,20 @@ bool tns_move_selection(tns_t *tns, direction_t dir, int cnt)
 	cnt = cnt > 1 ? cnt : 1;
 
 	switch (dir) {
-		case DIR_UP:
-			*tns->sel = MAX(*tns->sel - cnt * tns->cols, *tns->sel % tns->cols);
-			break;
-		case DIR_DOWN:
-			max = tns->cols * ((*tns->cnt - 1) / tns->cols) +
-			      MIN((*tns->cnt - 1) % tns->cols, *tns->sel % tns->cols);
-			*tns->sel = MIN(*tns->sel + cnt * tns->cols, max);
-			break;
-		case DIR_LEFT:
-			*tns->sel = MAX(*tns->sel - cnt, 0);
-			break;
-		case DIR_RIGHT:
-			*tns->sel = MIN(*tns->sel + cnt, *tns->cnt - 1);
-			break;
+	case DIR_UP:
+		*tns->sel = MAX(*tns->sel - cnt * tns->cols, *tns->sel % tns->cols);
+		break;
+	case DIR_DOWN:
+		max = tns->cols * ((*tns->cnt - 1) / tns->cols) +
+		      MIN((*tns->cnt - 1) % tns->cols, *tns->sel % tns->cols);
+		*tns->sel = MIN(*tns->sel + cnt * tns->cols, max);
+		break;
+	case DIR_LEFT:
+		*tns->sel = MAX(*tns->sel - cnt, 0);
+		break;
+	case DIR_RIGHT:
+		*tns->sel = MIN(*tns->sel + cnt, *tns->cnt - 1);
+		break;
 	}
 
 	if (*tns->sel != old) {
@@ -529,6 +522,7 @@ bool tns_move_selection(tns_t *tns, direction_t dir, int cnt)
 		tns_check_view(tns, false);
 		if (!tns->dirty)
 			tns_highlight(tns, *tns->sel, true);
+		title_dirty = true;
 	}
 	return *tns->sel != old;
 }
@@ -563,7 +557,7 @@ bool tns_zoom(tns_t *tns, int d)
 	oldzl = tns->zl;
 	tns->zl += -(d < 0) + (d > 0);
 	tns->zl = MAX(tns->zl, 0);
-	tns->zl = MIN(tns->zl, ARRLEN(thumb_sizes)-1);
+	tns->zl = MIN(tns->zl, (int)ARRLEN(thumb_sizes)-1);
 
 	tns->bw = ((thumb_sizes[tns->zl] - 1) >> 5) + 1;
 	tns->bw = MIN(tns->bw, 4);

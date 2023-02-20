@@ -1,5 +1,5 @@
 /* Copyright 2011-2020 Bert Muennich
- * Copyright 2021-2022 nsxiv contributors
+ * Copyright 2021-2023 nsxiv contributors
  *
  * This file is a part of nsxiv.
  *
@@ -20,11 +20,9 @@
 #ifndef NSXIV_H
 #define NSXIV_H
 
-#include <stdarg.h>
 #include <stdbool.h>
-#include <stdio.h>
-#include <sys/time.h>
-#include <sys/types.h>
+#include <stddef.h>
+
 #include <Imlib2.h>
 #include <X11/Xlib.h>
 
@@ -39,21 +37,7 @@
 #define ABS(a) ((a) > 0 ? (a) : -(a))
 
 #define ARRLEN(a) (sizeof(a) / sizeof((a)[0]))
-
 #define STREQ(s1,s2) (strcmp((s1), (s2)) == 0)
-
-#define TV_DIFF(t1,t2) (((t1)->tv_sec  - (t2)->tv_sec ) * 1000 + \
-                        ((t1)->tv_usec - (t2)->tv_usec) / 1000)
-
-#define TV_SET_MSEC(tv,t) {             \
-  (tv)->tv_sec  = (t) / 1000;           \
-  (tv)->tv_usec = (t) % 1000 * 1000;    \
-}
-
-#define TV_ADD_MSEC(tv,t) {             \
-  (tv)->tv_sec  += (t) / 1000;          \
-  (tv)->tv_usec += (t) % 1000 * 1000;   \
-}
 
 typedef enum {
 	MODE_ALL,
@@ -140,12 +124,12 @@ struct arl {
 	int fd;
 	int wd_dir;
 	int wd_file;
-	char *filename;
+	const char *filename;
 };
 
 void arl_init(arl_t*);
 void arl_cleanup(arl_t*);
-void arl_setup(arl_t*, const char* /* result of realpath(3) */);
+void arl_add(arl_t*, const char* /* result of realpath(3) */);
 bool arl_handle(arl_t*);
 
 
@@ -178,9 +162,9 @@ typedef struct {
 
 typedef struct {
 	img_frame_t *frames;
-	int cap;
-	int cnt;
-	int sel;
+	unsigned int cap;
+	unsigned int cnt;
+	unsigned int sel;
 	bool animate;
 	unsigned int framedelay;
 	int length;
@@ -197,14 +181,16 @@ struct img {
 
 	Imlib_Color_Modifier cmod;
 	int gamma;
+	int brightness;
+	int contrast;
 
 	scalemode_t scalemode;
 	float zoom;
 
 	bool checkpan;
 	bool dirty;
-	bool aa;
-	bool alpha;
+	bool anti_alias;
+	bool alpha_layer;
 
 	struct {
 		bool on;
@@ -228,9 +214,14 @@ bool img_pan_edge(img_t*, direction_t);
 void img_rotate(img_t*, degree_t);
 void img_flip(img_t*, flipdir_t);
 void img_toggle_antialias(img_t*);
-bool img_change_gamma(img_t*, int);
+void img_update_color_modifiers(img_t*);
+bool img_change_color_modifier(img_t*, int, int*);
 bool img_frame_navigate(img_t*, int);
 bool img_frame_animate(img_t*);
+Imlib_Image img_open(const fileinfo_t*);
+#if HAVE_LIBEXIF
+void exif_auto_orientate(const fileinfo_t*);
+#endif
 
 
 /* options.c */
@@ -249,8 +240,10 @@ struct opt {
 	scalemode_t scalemode;
 	float zoom;
 	bool animate;
+	bool anti_alias;
+	bool alpha_layer;
 	int gamma;
-	int slideshow;
+	unsigned int slideshow;
 	int framerate;
 
 	/* window: */
@@ -334,17 +327,6 @@ typedef struct {
 	int stlen;
 } r_dir_t;
 
-typedef struct {
-	int readfd;
-	int writefd;
-	pid_t pid;
-} spawn_t;
-
-enum {
-	X_READ  = (1 << 0),
-	X_WRITE = (1 << 1)
-};
-
 extern const char *progname;
 
 void* emalloc(size_t);
@@ -357,7 +339,7 @@ int r_closedir(r_dir_t*);
 char* r_readdir(r_dir_t*, bool);
 int r_mkdir(char*);
 void construct_argv(char**, unsigned int, ...);
-spawn_t spawn(const char*, char *const [], unsigned int);
+pid_t spawn(int*, int*, char *const []);
 
 
 /* window.c */
@@ -366,11 +348,6 @@ spawn_t spawn(const char*, char *const [], unsigned int);
 #if HAVE_LIBFONTS
 #include <X11/Xft/Xft.h>
 #endif
-
-enum {
-	BAR_L_LEN = 512,
-	BAR_R_LEN = 64
-};
 
 enum {
 	ATOM_WM_DELETE_WINDOW,
@@ -420,8 +397,8 @@ struct win {
 	unsigned int bw;
 
 	struct {
-		int w;
-		int h;
+		unsigned int w;
+		unsigned int h;
 		Pixmap pm;
 	} buf;
 
@@ -444,8 +421,37 @@ void win_toggle_bar(win_t*);
 void win_clear(win_t*);
 void win_draw(win_t*);
 void win_draw_rect(win_t*, int, int, int, int, bool, int, unsigned long);
-void win_set_title(win_t*, bool);
+void win_set_title(win_t*, const char*, size_t);
 void win_set_cursor(win_t*, cursor_t);
 void win_cursor_pos(win_t*, int*, int*);
+
+/* main.c */
+
+/* timeout handler functions: */
+void redraw(void);
+void reset_cursor(void);
+void animate(void);
+void slideshow(void);
+void clear_resize(void);
+
+void remove_file(int, bool);
+void set_timeout(timeout_f, int, bool);
+void reset_timeout(timeout_f);
+void close_info(void);
+void open_info(void);
+void load_image(int);
+bool mark_image(int, bool);
+int nav_button(void);
+void handle_key_handler(bool);
+
+extern appmode_t mode;
+extern const XButtonEvent *xbutton_ev;
+extern fileinfo_t *files;
+extern int filecnt, fileidx;
+extern int alternate;
+extern int markcnt;
+extern int markidx;
+extern int prefix;
+extern bool title_dirty;
 
 #endif /* NSXIV_H */

@@ -30,93 +30,103 @@ It has two modes of operation: image and thumbnail mode. The default is image
 mode, in which only the current image is shown. In thumbnail mode a grid of
 small previews is displayed, making it easy to choose an image to open.
 .P
-Please note, that the fullscreen mode requires an EWMH/NetWM compliant window
+Please note, that the fullscreen mode requires an EWMH/NetWM-compliant window
 manager.
 .SH OPTIONS
 .TP
-.BI "\-A " FRAMERATE
+.BI "\-A, \-\-framerate " FRAMERATE
 Play animations with a constant frame rate set to
 .IR FRAMERATE .
 .TP
-.B \-a
+.B "\-a, \-\-animate"
 Play animations of multi-frame images.
 .TP
-.B \-b
+.B "\-b, \-\-no\-bar"
 Do not show statusbar at the bottom of the window.
 .TP
-.B \-c
+.B "\-c, \-\-clean\-cache"
 Remove all orphaned cache files from the thumbnail cache directory and exit.
 .TP
-.BI "\-e " WID
+.BI "\-e, \-\-embed " WID
 Embed nsxiv's window into window whose ID is
 .IR WID .
 .TP
-.B \-f
+.B "\-f, \-\-fullscreen"
 Start in fullscreen mode.
 .TP
-.BI "\-G " GAMMA
+.BI "\-G, \-\-gamma " GAMMA
 Set image gamma to GAMMA (\-32..32).
 .TP
-.BI "\-g " GEOMETRY
+.BI "\-g, \-\-geometry " GEOMETRY
 Set window position and size. See section GEOMETRY SPECIFICATIONS of X(7) for
 more information on GEOMETRY argument.
 .TP
-.BI "\-N " NAME
-Set the resource name of nsxiv's X window to NAME.
-.TP
-.BI "\-n " NUM
-Start at picture number NUM.
-.TP
-.B \-h
+.B "\-h, \-\-help"
 Print brief usage information to standard output and exit.
 .TP
-.B \-i
+.B "\-i, \-\-stdin"
 Read names of files to open from standard input. Also done if FILE is `-'.
 .TP
-.B \-o
+.BI "\-N, \-\-class " NAME
+Set the resource name (WM_CLASS) of nsxiv's X window to NAME.
+.TP
+.BI "\-n, \-\-start\-at " NUM
+Start at picture number NUM.
+.TP
+.B "\-o, \-\-stdout"
 Write list of all marked files to standard output when quitting. In combination
 with
-.B \-i
+.B "\-i, \-\-stdin"
 nsxiv can be used as a visual filter/pipe.
 .TP
-.B \-p
+.B "\-p, \-\-private"
 Enable private mode, in which nsxiv does not write any cache or temporary files.
 .TP
-.B \-q
-Be quiet, disable warnings to standard error stream.
+.B "\-q, \-\-quiet"
+Be quiet, and disable warnings to standard error stream.
 .TP
-.B \-r
+.B "\-r, \-\-recursive"
 Search the given directories recursively for images to view.
 .TP
-.BI "\-S " DELAY
+.BI "\-S, \-\-ss\-delay " DELAY
 Start in slideshow mode. Set the delay between images to
 .I DELAY
 seconds.
 .I DELAY
-may be a floating point number.
+may be a floating-point number.
 .TP
-.BI "\-s " MODE
+.BI "\-s, \-\-scale\-mode " MODE
 Set scale mode according to MODE character. Supported modes are: [d]own,
 [f]it, [F]ill, [w]idth, [h]eight.
 .TP
-.B \-t
+.B "\-t, \-\-thumbnail"
 Start in thumbnail mode.
 .TP
-.B \-v
+.B "\-v, \-\-version"
 Print version information to standard output and exit.
 .TP
-.B \-Z
+.B "\-Z, \-\-zoom\-100"
 The same as `\-z 100'.
 .TP
-.BI "\-z " ZOOM
+.BI "\-z, \-\-zoom " ZOOM
 Set zoom level to ZOOM percent.
 .TP
-.B \-0
-Use NULL-separator. With this option output of \-o and file-list sent to the
+.B "\-0, \-\-null"
+Use NULL-separator. With this option, output of \-o and file-list sent to the
 key-handler and the input of \-i will be separated by a NULL character.
+.TP
+.BI "\-\-anti\-alias" [=no]
+Enables anti-aliasing, when given
+.I no
+as an argument, disables it instead.
+.TP
+.BI "\-\-alpha\-layer" [=no]
+Enables checkerboard background for alpha layer, when given
+.I no
+as an argument, disables it instead.
 .SH KEYBOARD COMMANDS
 .SS General
-The following keyboard commands are available in both image and thumbnail mode:
+The following keyboard commands are available in both image and thumbnail modes:
 .TP
 .BR 0 \- 9
 Prefix the next command with a number (denoted via
@@ -204,6 +214,26 @@ steps.
 .TP
 .B Ctrl-g
 Reset gamma correction.
+.TP
+.B [
+Decrease brightness correction by
+.I count
+steps.
+.TP
+.B ]
+Increase brightness correction by
+.I count
+steps.
+.TP
+.B (
+Decrease contrast by
+.I count
+steps.
+.TP
+.B )
+Increase contrast by
+.I count
+steps.
 .SS Thumbnail mode
 The following keyboard commands are only available in thumbnail mode:
 .TP
@@ -253,6 +283,9 @@ Go
 Go
 .I count
 * 10 images forward.
+.TP
+.B Ctrl-6
+Go to the previously viewed image.
 .TP
 Handle multi-frame images:
 .TP
@@ -366,7 +399,7 @@ The following mouse mappings are available in thumbnail mode:
 Select the image. Goes into image mode if double\-clicked.
 .TP
 .B Button3
-Mark/unmark the image. Dragging while holding Button3 down will mark/unmark
+Mark/unmark the image. Dragging while holding down Button3 will mark/unmark
 multiple images.
 .TP
 .B Button4
@@ -426,15 +459,22 @@ Color of the mark foreground. Defaults to window.foreground
 Please see xrdb(1) on how to change them.
 .SH WINDOW TITLE
 The window title can be replaced with the output of a user-provided script,
-which is called by nsxiv whenever there's a redraw. The path of this script is
+which is called by nsxiv whenever any of the relevant information changes.
+The path of this script is
 .I $XDG_CONFIG_HOME/nsxiv/exec/win-title
 and the arguments given to it (where "Optional" arguments might be empty) are:
-1) resolved absolute path of the current file,
-2) current file number,
-3) total file count,
-4) image width (Optional: Disabled on thumbnails mode),
-5) image height (Optional: Disabled on thumbnails mode),
-6) current zoom (Optional: Disabled on thumbnails mode).
+.IP $1 4
+resolved absolute path of the current file
+.IP $2 4
+current file number
+.IP $3 4
+total file count
+.IP $4 4
+image width (Optional: Disabled on thumbnails mode)
+.IP $5 4
+image height (Optional: Disabled on thumbnails mode)
+.IP $6 4
+current zoom (Optional: Disabled on thumbnails mode)
 .P
 The term file is used rather than image as nsxiv does not precheck that the
 input files are valid images. Total file count may be different from the actual
@@ -444,14 +484,36 @@ There is also an example script installed together with nsxiv as
 .IR EGPREFIX/win-title .
 .SH STATUS BAR
 The information displayed on the left side of the status bar can be replaced
-with the output of a user-provided script, which is called by nsxiv whenever an
-image gets loaded. The path of this script is
-.I $XDG_CONFIG_HOME/nsxiv/exec/image-info
-and the arguments given to it are: 1) path to image file, 2) image width,
-3) image height.
+with the output of user-provided script.
 .P
-There is also an example script installed together with nsxiv as
-.IR EGPREFIX/image-info .
+The script that is called by nsxiv whenever an image gets loaded is located at
+.I $XDG_CONFIG_HOME/nsxiv/exec/image-info
+and the arguments given to it are:
+.IP $1 4
+path to image file (as provided by the user)
+.IP $2 4
+image width
+.IP $3 4
+image height
+.IP $4 4
+fully resolved path to the image file
+.P
+In thumbnail mode, the script that is called is located at
+.I $XDG_CONFIG_HOME/nsxiv/exec/thumb-info
+and the arguments given to it are:
+.IP $1 4
+path to image file (as provided by the user)
+.IP $2 4
+empty
+.IP $3 4
+empty
+.IP $4 4
+fully resolved path to the image file
+.P
+There are also example scripts installed together with nsxiv as
+.IR EGPREFIX/image-info
+and
+.IR EGPREFIX/thumb-info .
 .SH EXTERNAL KEY HANDLER
 Additional external keyboard commands can be defined using a handler program
 located in
@@ -465,7 +527,7 @@ the handler terminates. It then checks which images have been modified and
 reloads them.
 
 By default nsxiv(1) will send one image per-line to stdin, however when using
-\-0 the image list will be NULL separated and the enviornment variable
+\-0 the image list will be NULL separated and the environment variable
 "$NSXIV_USING_NULL" will be set to 1.
 
 The key combo argument has the following form: "[C-][M-][S-]KEY",
@@ -494,39 +556,32 @@ Bert Muennich          <ber.t at posteo.de>
 .EE
 .SH CURRENT MAINTAINERS
 .EX
-N-R-K                  <nrk at disroot.org>
+NRK                    <nrk at disroot.org>
 Berke Kocaoğlu         <berke.kocaoglu at metu.edu.tr>
 TAAPArthur             <taaparthur at gmail.com>
 eylles                 <ed.ylles1997 at gmail.com>
+Stein Gunnar Bakkeby   <bakkeby at gmail.com>
+explosion-mental       <explosion0mental at gmail.com>
 mamg22                 <marcomonizg at gmail.com>
 LuXu
-explosion-mental       <explosion0mental at gmail.com>
 Guilherme Freire
-Stein Gunnar Bakkeby   <bakkeby at gmail.com>
-Anupam Ashish Minz
 Sam Whitehead
 Kian Kasad             <kian at kasad.com>
-qsmodo
 .EE
 .SH CONTRIBUTORS
 .EX
-Bastien Dejean         <nihilhill at gmail.com>
-Dave Reisner           <d at falconindy.com>
-Fung SzeTat            <sthorde at gmail.com>
-Max Voit               <mvdev at with-eyes.net>
-
-For additional contributors, run `git shortlog -s` in the nsxiv repository.
+For a list of contributors, run `git shortlog -s` in the nsxiv git repository.
 .EE
 .SH HOMEPAGE
 .TP
 Website:
 .EE
-https://nsxiv.github.io/nsxiv/
+https://nsxiv.codeberg.page/
 .EX
 .TP
 Source code:
 .EE
-https://github.com/nsxiv/nsxiv
+https://codeberg.org/nsxiv/nsxiv
 .EX
 .SH SEE ALSO
 .BR X (7),

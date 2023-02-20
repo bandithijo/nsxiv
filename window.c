@@ -1,5 +1,5 @@
 /* Copyright 2011-2020 Bert Muennich
- * Copyright 2021-2022 nsxiv contributors
+ * Copyright 2021-2023 nsxiv contributors
  *
  * This file is a part of nsxiv.
  *
@@ -18,30 +18,28 @@
  */
 
 #include "nsxiv.h"
-#define _WINDOW_CONFIG
+#define INCLUDE_WINDOW_CONFIG
 #include "config.h"
 #include "icon/data.h"
 
+#include <assert.h>
+#include <locale.h>
 #include <stdlib.h>
 #include <string.h>
-#include <locale.h>
 #include <unistd.h>
-#include <X11/cursorfont.h>
+
 #include <X11/Xatom.h>
 #include <X11/Xresource.h>
-
-extern size_t get_win_title(unsigned char *, int, bool);
+#include <X11/cursorfont.h>
 
 #if HAVE_LIBFONTS
 #include "utf8.h"
-static XftFont *font;
-static double fontsize;
+#define UTF8_PADDING 4  /* utf8_decode requires 4 bytes of zero padding */
 #define TEXTWIDTH(win, text, len) \
 	win_draw_text(win, NULL, NULL, 0, 0, text, len, 0)
 #endif
 
 #define RES_CLASS "Nsxiv"
-
 #define INIT_ATOM_(atom) \
 	atoms[ATOM_##atom] = XInternAtom(e->dpy, #atom, False);
 
@@ -50,6 +48,10 @@ enum {
 	V_TEXT_PAD = 1
 };
 
+Atom atoms[ATOM_COUNT];
+
+static GC gc;
+static int barheight;
 static struct {
 	int name;
 	Cursor icon;
@@ -58,11 +60,10 @@ static struct {
 	{ XC_sb_left_arrow }, { XC_sb_right_arrow }
 };
 
-static GC gc;
-
-static int barheight;
-
-Atom atoms[ATOM_COUNT];
+#if HAVE_LIBFONTS
+static XftFont *font;
+static double fontsize;
+#endif
 
 #if HAVE_LIBFONTS
 static void win_init_font(const win_env_t *e, const char *fontstr)
@@ -73,7 +74,6 @@ static void win_init_font(const win_env_t *e, const char *fontstr)
 	fontheight = font->ascent + font->descent;
 	FcPatternGetDouble(font->pattern, FC_SIZE, 0, &fontsize);
 	barheight = fontheight + 2 * V_TEXT_PAD;
-	XftFontClose(e->dpy, font);
 }
 
 static void xft_alloc_color(const win_env_t *e, const char *name, XftColor *col)
@@ -97,7 +97,7 @@ static const char* win_res(XrmDatabase db, const char *name, const char *def)
 
 	if (db != NULL &&
 	    XrmGetResource(db, name, name, &type, &ret) &&
-	    STREQ(type, "String"))
+	    STREQ(type, "String") && *ret.addr != '\0')
 	{
 		return ret.addr;
 	} else {
@@ -109,13 +109,15 @@ void win_init(win_t *win)
 {
 	win_env_t *e;
 	const char *win_bg, *win_fg, *mrk_fg;
-#if HAVE_LIBFONTS
-	const char *bar_fg, *bar_bg, *f;
-#endif
 	char *res_man;
 	XrmDatabase db;
+#if HAVE_LIBFONTS
+	const char *bar_fg, *bar_bg, *f;
 
-	memset(win, 0, sizeof(win_t));
+	static char lbuf[512 + UTF8_PADDING], rbuf[64 + UTF8_PADDING];
+#endif
+
+	memset(win, 0, sizeof(*win));
 
 	e = &win->env;
 	if ((e->dpy = XOpenDisplay(NULL)) == NULL)
@@ -151,13 +153,10 @@ void win_init(win_t *win)
 	f = win_res(db, RES_CLASS ".bar.font", DEFAULT_FONT);
 	win_init_font(e, f);
 
-	win->bar.l.size = BAR_L_LEN;
-	win->bar.r.size = BAR_R_LEN;
-	/* 3 padding bytes needed by utf8_decode */
-	win->bar.l.buf = emalloc(win->bar.l.size + 3);
-	win->bar.l.buf[0] = '\0';
-	win->bar.r.buf = emalloc(win->bar.r.size + 3);
-	win->bar.r.buf[0] = '\0';
+	win->bar.l.buf = lbuf;
+	win->bar.r.buf = rbuf;
+	win->bar.l.size = sizeof(lbuf) - UTF8_PADDING;
+	win->bar.r.size = sizeof(rbuf) - UTF8_PADDING;
 	win->bar.h = options->hide_bar ? 0 : barheight;
 	win->bar.top = TOP_STATUSBAR;
 #endif /* HAVE_LIBFONTS */
@@ -189,7 +188,7 @@ void win_open(win_t *win)
 	int gmask;
 	XSizeHints sizehints;
 	XWMHints hints;
-	pid_t pid;
+	long pid;
 	char hostname[256];
 	XSetWindowAttributes attrs;
 	char res_class[] = RES_CLASS;
@@ -247,7 +246,7 @@ void win_open(win_t *win)
 	/* set the _NET_WM_PID */
 	pid = getpid();
 	XChangeProperty(e->dpy, win->xwin, atoms[ATOM__NET_WM_PID], XA_CARDINAL,
-	                sizeof(pid_t) * 8, PropModeReplace, (unsigned char *) &pid, 1);
+	                32, PropModeReplace, (unsigned char *) &pid, 1);
 	if (gethostname(hostname, ARRLEN(hostname)) == 0) {
 		XTextProperty tp;
 		tp.value = (unsigned char *)hostname;
@@ -261,7 +260,7 @@ void win_open(win_t *win)
 	             ButtonReleaseMask | ButtonPressMask | KeyPressMask |
 	             PointerMotionMask | StructureNotifyMask);
 
-	for (i = 0; i < ARRLEN(cursors); i++) {
+	for (i = 0; i < (int)ARRLEN(cursors); i++) {
 		if (i != CURSOR_NONE)
 			cursors[i].icon = XCreateFontCursor(e->dpy, cursors[i].name);
 	}
@@ -276,12 +275,12 @@ void win_open(win_t *win)
 	n = icons[ARRLEN(icons)-1].size;
 	icon_data = emalloc((n * n + 2) * sizeof(*icon_data));
 
-	for (i = 0; i < ARRLEN(icons); i++) {
+	for (i = 0; i < (int)ARRLEN(icons); i++) {
 		n = 0;
 		icon_data[n++] = icons[i].size;
 		icon_data[n++] = icons[i].size;
 
-		for (j = 0; j < icons[i].cnt; j++) {
+		for (j = 0; j < (int)icons[i].cnt; j++) {
 			for (c = icons[i].data[j] >> 4; c >= 0; c--)
 				icon_data[n++] = icon_colors[icons[i].data[j] & 0x0F];
 		}
@@ -291,7 +290,7 @@ void win_open(win_t *win)
 	}
 	free(icon_data);
 
-	win_set_title(win, true);
+	win_set_title(win, res_name, strlen(res_name));
 	classhint.res_class = res_class;
 	classhint.res_name = options->res_name != NULL ? options->res_name : res_name;
 	XSetClassHint(e->dpy, win->xwin, &classhint);
@@ -309,6 +308,12 @@ void win_open(win_t *win)
 	hints.initial_state = NormalState;
 	XSetWMHints(win->env.dpy, win->xwin, &hints);
 
+	if (options->fullscreen) {
+		XChangeProperty(e->dpy, win->xwin, atoms[ATOM__NET_WM_STATE],
+		                XA_ATOM, 32, PropModeReplace,
+		                (unsigned char *) &atoms[ATOM__NET_WM_STATE_FULLSCREEN], 1);
+	}
+
 	win->h -= win->bar.h;
 
 	win->buf.w = e->scrw;
@@ -320,9 +325,6 @@ void win_open(win_t *win)
 	XSetWindowBackgroundPixmap(e->dpy, win->xwin, win->buf.pm);
 	XMapWindow(e->dpy, win->xwin);
 	XFlush(e->dpy);
-
-	if (options->fullscreen)
-		win_toggle_fullscreen(win);
 }
 
 CLEANUP void win_close(win_t *win)
@@ -333,7 +335,9 @@ CLEANUP void win_close(win_t *win)
 		XFreeCursor(win->env.dpy, cursors[i].icon);
 
 	XFreeGC(win->env.dpy, gc);
-
+#if HAVE_LIBFONTS
+	XftFontClose(win->env.dpy, font);
+#endif
 	XDestroyWindow(win->env.dpy, win->xwin);
 	XCloseDisplay(win->env.dpy);
 }
@@ -342,7 +346,7 @@ bool win_configure(win_t *win, XConfigureEvent *c)
 {
 	bool changed;
 
-	changed = win->w != c->width || win->h + win->bar.h != c->height;
+	changed = win->w != (unsigned int)c->width || win->h + win->bar.h != (unsigned int)c->height;
 
 	win->x = c->x;
 	win->y = c->y;
@@ -385,9 +389,7 @@ void win_toggle_bar(win_t *win)
 
 void win_clear(win_t *win)
 {
-	win_env_t *e;
-
-	e = &win->env;
+	win_env_t *e = &win->env;
 
 	if (win->w > win->buf.w || win->h + win->bar.h > win->buf.h) {
 		XFreePixmap(e->dpy, win->buf.pm);
@@ -404,7 +406,7 @@ void win_clear(win_t *win)
 static int win_draw_text(win_t *win, XftDraw *d, const XftColor *color,
                          int x, int y, char *text, int len, int w)
 {
-	int err, tw = 0;
+	int err, tw = 0, warned = 0;
 	char *t, *next;
 	uint32_t rune;
 	XftFont *f;
@@ -412,7 +414,14 @@ static int win_draw_text(win_t *win, XftDraw *d, const XftColor *color,
 	XGlyphInfo ext;
 
 	for (t = text; t - text < len; t = next) {
+		err = 0;
 		next = utf8_decode(t, &rune, &err);
+		if (err) {
+			if (!warned)
+				error(0, 0, "error decoding utf8 status-bar text");
+			warned = 1;
+			continue;
+		}
 		if (XftCharExists(win->env.dpy, font, rune)) {
 			f = font;
 		} else { /* fallback font */
@@ -442,10 +451,10 @@ static void win_draw_bar(win_t *win)
 	win_bar_t *l, *r;
 	XftDraw *d;
 
-	if ((l = &win->bar.l)->buf == NULL || (r = &win->bar.r)->buf == NULL)
-		return;
-
 	e = &win->env;
+	l = &win->bar.l;
+	r = &win->bar.r;
+	assert(l->buf != NULL && r->buf != NULL);
 	y = (win->bar.top ? 0 : win->h) + font->ascent + V_TEXT_PAD;
 	w = win->w - 2*H_TEXT_PAD;
 	d = XftDrawCreate(e->dpy, win->buf.pm, e->vis, e->cmap);
@@ -502,17 +511,14 @@ void win_draw_rect(win_t *win, int x, int y, int w, int h, bool fill, int lw,
 		XDrawRectangle(win->env.dpy, win->buf.pm, gc, x, y, w, h);
 }
 
-void win_set_title(win_t *win, bool init)
+void win_set_title(win_t *win, const char *title, size_t len)
 {
-	size_t len, i;
-	unsigned char title[512];
-	int targets[] = { ATOM_WM_NAME, ATOM_WM_ICON_NAME, ATOM__NET_WM_NAME, ATOM__NET_WM_ICON_NAME };
+	int i, targets[] = { ATOM_WM_NAME, ATOM_WM_ICON_NAME, ATOM__NET_WM_NAME, ATOM__NET_WM_ICON_NAME };
 
-	if ((len = get_win_title(title, ARRLEN(title), init)) > 0) {
-		for (i = 0; i < ARRLEN(targets); ++i) {
-			XChangeProperty(win->env.dpy, win->xwin, atoms[targets[i]],
-			                atoms[ATOM_UTF8_STRING], 8, PropModeReplace, title, len);
-		}
+	for (i = 0; i < (int)ARRLEN(targets); ++i) {
+		XChangeProperty(win->env.dpy, win->xwin, atoms[targets[i]],
+		                atoms[ATOM_UTF8_STRING], 8, PropModeReplace,
+		                (unsigned char *)title, len);
 	}
 }
 
